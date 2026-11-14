@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP servers",
+    "description": "Manage native DSH MCP servers using individual fields, with names, notes, HTTP/command selection, optional headers, arguments, environment variables, and advanced connection settings. Required fields, examples and dependent validation guide each step; the plugin generates configuration and saves through official Settings. Notes are stored separately per profile. Supports safe editing, enabling, deletion, reconnection and connection tests. Legacy SSE and interactive OAuth are not supported."
+  }
+}
