@@ -7,8 +7,11 @@ const assert = require('node:assert/strict');
 (async () => {
   const anchor = path.join(process.env.DSH_INSTALL_DIR, 'package.json');
   const fromDsh = createRequire(anchor);
-  const { boot, readProfilePatches } = fromDsh('@deepseek-ai/dsh-app-boot');
+  const { boot, evaluatePluginCompatibility, getDshRuntimeVersion, readProfilePatches } = fromDsh('@deepseek-ai/dsh-app-boot');
   const { stringify, parse } = fromDsh('yaml');
+  const manifest = require('../package.json');
+  const runtimeVersion = getDshRuntimeVersion();
+  assert.equal(evaluatePluginCompatibility(manifest), undefined, `Plugin compatibility check failed on DSH ${runtimeVersion}`);
   const { McpManagementService } = await import('../management.js');
   const root = fs.mkdtempSync(path.join(__dirname, '.isolated-'));
   // This directory is owned by this test; never read the active profile/home.
@@ -41,17 +44,23 @@ const assert = require('node:assert/strict');
     const { HostConnectionService } = fromDsh('@deepseek-ai/dsh-client-connection');
     new HostConnectionService(ctx, [], {});
     ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'danger-full-access' }) });
-    const plugin = await import('../index.js');
-    const fiber = await ctx.plugin(plugin);
+    const plugin = await import(manifest.name);
+    await ctx.plugin(plugin);
     await ctx.loader.await();
     const shared = ctx.connection.createSharedFetchHandler('/api');
     const tool = ctx.tools.get('mcp_servers_manage'); assert.ok(tool);
     const signal = new AbortController().signal;
     const toolRead = await tool.execute({ action: 'list' }, { signal });
-    const req = () => new Request('http://localhost/api/local-mcp-manager', { method: 'POST', body: JSON.stringify({ type: 'client-request', rpcId: 'integration', method: 'local-mcp-manager', payload: { action: 'list' } }) });
-    const uiRead = await (await shared.fetch(req(), ctx.connection.browserPeer)).json();
-    assert.deepEqual(toolRead, uiRead.result);
-    assert.equal((await shared.fetch(req(), { principal: { kind: 'viewer' } })).status, 403);
+    const { installConnection } = fromDsh('@deepseek-ai/dsh-client-connection/client');
+    const readThroughCarrier = peer => {
+      const client = {};
+      installConnection({ provide: (key, value) => { client[key] = value; } }, {
+        transport: { fetch: (url, init) => shared.fetch(new Request(new URL(url, 'http://localhost/'), init), peer) },
+      });
+      return client.connection.rpc.call('/api', 'local-mcp-manager', { action: 'list' }, signal);
+    };
+    assert.deepEqual(await readThroughCarrier(ctx.connection.browserPeer), toolRead);
+    await assert.rejects(readThroughCarrier({ principal: { kind: 'viewer' } }), /HTTP 403/);
     let snapshot = service.snapshot();
     assert.equal(snapshot.ns, 'mcp-manager');
     const added = await service.execute({ action: 'save', name: 'isolated', entry: { transport: 'streamable-http', url: 'https://example.invalid/mcp', enabled: false }, note: '只读搜索服务器', noteRevision: 0, revision: snapshot.revision });
@@ -76,7 +85,7 @@ const assert = require('node:assert/strict');
     assert.ok(!snapshot.rows.some(r => r.name === 'isolated'));
     assert.ok(snapshot.rows.some(r => r.name === 'base'));
     assert.equal(ctx.mcpManager.list().find(r => r.name === 'base').status.state, 'disabled');
-    console.log('PASS: native Settings / ConfigEditor save, revision checks, preservation, removal, disabled fleet. No network or user profile mutations.');
+    console.log(`PASS on DSH ${runtimeVersion}: released Host, owner RPC, viewer denial, native Settings and notes in an isolated profile.`);
   } finally {
     if (ctx) await ctx.fiber.dispose();
     // Verify the resolved target is exactly the owned mkdtemp directory before cleanup.

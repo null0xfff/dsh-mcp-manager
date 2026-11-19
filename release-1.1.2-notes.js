@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { InputError, validateName, own } from './release-1.1.1-config.js';
+import { InputError, validateName, own } from './release-1.1.2-config.js';
 
 export function notesSpec(profileDirectory) {
   // Profile-specific, so two profiles sharing the storage backend cannot mix notes.

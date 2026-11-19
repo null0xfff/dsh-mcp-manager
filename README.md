@@ -9,11 +9,11 @@
 
 ## 版本号
 
-1.1.1
+1.1.2
 
 ## 支持版本
 
-DeepSeek Harness **0.2.2-rc.3**（Web／Desktop）。
+DeepSeek Harness **0.2.2-rc.5**（Web／Desktop）。插件按这个预发布版本声明兼容性。
 
 ## 许可证
 

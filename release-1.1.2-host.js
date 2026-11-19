@@ -1,6 +1,6 @@
-import { McpManagementService } from './release-1.1.1-management.js';
-import { InputError } from './release-1.1.1-config.js';
-import { ServerNotes, notesSpec } from './release-1.1.1-notes.js';
+import { McpManagementService } from './release-1.1.2-management.js';
+import { InputError } from './release-1.1.2-config.js';
+import { ServerNotes, notesSpec } from './release-1.1.2-notes.js';
 
 export const name = 'local-mcp-manager-ui';
 export const inject = ['settings', 'mcpManager', 'connection', 'tools', 'sandboxPolicy', 'storageDomain', 'profileContext'];
