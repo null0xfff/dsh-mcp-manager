@@ -57,10 +57,14 @@ export async function apply(ctx) {
     async execute(args, exec) {
       try {
         if (!['list', 'preview'].includes(args.action)) {
-          const policy = ctx.sandboxPolicy.resolve(exec.agent ? { session: exec.agent.session } : {});
-          if (policy.mode !== 'danger-full-access') throw new InputError('MCP configuration changes and connection tests require Full access; use the owner UI otherwise.', 'forbidden');
+          // Never fall back to a deployment-wide mode for a missing calling session.
+          const session = exec?.agent?.session;
+          const policy = session == null ? undefined : ctx.sandboxPolicy?.resolve?.({ session });
+          if (policy?.mode !== 'danger-full-access') {
+            throw new InputError('MCP configuration changes and connection tests require a calling session with Full access; use the owner UI otherwise.', 'forbidden');
+          }
         }
-        return { ok: true, value: await service.execute(args, exec.signal) };
+        return { ok: true, value: await service.execute(args, exec?.signal) };
       } catch (error) { return failure(error); }
     },
   }));

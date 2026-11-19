@@ -1,5 +1,5 @@
-import { InputError, own, isObject, assertPlain, normalizeEntry, parseInput, maskEntry, sanitizeDiagnostic, validateName, yamlPreview } from './release-1.1.2-config.js';
-import { validateNote } from './release-1.1.2-notes.js';
+import { InputError, own, isObject, assertPlain, normalizeEntry, parseInput, maskEntry, sanitizeDiagnostic, validateName, yamlPreview } from './release-1.1.3-config.js';
+import { validateNote } from './release-1.1.3-notes.js';
 
 export class McpManagementService {
   constructor(ctx, notes = null) { this.ctx = ctx; this.notes = notes; this.tail = Promise.resolve(); this.stopped = false; this.active = new Set(); }

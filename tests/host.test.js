@@ -30,3 +30,39 @@ test('UI Fetch envelope and agent tool share operations, reject malformed envelo
   await Promise.all(effects.map(dispose => dispose()));
   assert.deepEqual(disposed.sort(), ['fetch', 'notes', 'tool']);
 });
+
+test('tool side effects require a verified calling session with Full access', async () => {
+  const session = {};
+  const exec = { agent: { session }, signal: new AbortController().signal };
+  let tool, writes = 0, lookups = 0;
+  const ctx = {
+    settings: {
+      describe: () => [{ ns: 'mcp-manager', revision: 0, value: { servers: {} } }],
+      mutate: () => { writes++; },
+    },
+    mcpManager: { list: () => [] },
+    profileContext: { dir: 'C:/isolated-test' },
+    storageDomain: { open: async () => ({ global: { get: () => ({ revision: 0, notes: {} }) } }) },
+    effect: fn => fn(),
+    connection: { fetch: { register: () => () => {} } },
+    tools: { register: value => { tool = value; return () => {}; } },
+    sandboxPolicy: { resolve: () => { lookups++; return { mode: 'danger-full-access' }; } },
+  };
+  await apply(ctx);
+  const save = { action: 'save', name: 'isolated', entry: { transport: 'stdio', command: 'node', enabled: false }, revision: 0 };
+  for (const context of [undefined, { signal: exec.signal }, { ...exec, agent: {} }]) {
+    assert.equal((await tool.execute(save, context)).error?.code, 'forbidden');
+  }
+  assert.equal(lookups, 0);
+  assert.equal((await tool.execute(save, exec)).ok, true);
+  assert.equal(writes, 1);
+  ctx.sandboxPolicy = undefined;
+  assert.equal((await tool.execute(save, exec)).error?.code, 'forbidden');
+  assert.equal((await tool.execute({ action: 'list' }, exec)).ok, true);
+  ctx.sandboxPolicy = { resolve: ({ session: supplied }) => {
+    assert.equal(supplied, session);
+    return { mode: 'unknown' };
+  } };
+  assert.equal((await tool.execute(save, exec)).error?.code, 'forbidden');
+  assert.equal(writes, 1);
+});

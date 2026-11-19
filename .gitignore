@@ -11,8 +11,5 @@ Thumbs.db
 # Obsolete local module generations; keep only the current distributable.
 runtime-*.js
 release-*.js
-!release-1.1.2-*.js
+!release-1.1.3-*.js
 prepare-release.cjs
-
-# Owned integration test scratch directories.
-tests/.isolated-*/
