@@ -11,5 +11,5 @@ Thumbs.db
 # Obsolete local module generations; keep only the current distributable.
 runtime-*.js
 release-*.js
-!release-1.1.3-*.js
+!release-1.1.4-*.js
 prepare-release.cjs

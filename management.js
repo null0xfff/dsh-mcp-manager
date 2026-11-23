@@ -1,6 +1,14 @@
 import { InputError, own, isObject, assertPlain, normalizeEntry, parseInput, maskEntry, sanitizeDiagnostic, validateName, yamlPreview } from './config.js';
 import { validateNote } from './notes.js';
 
+// DSH Settings describes the native entry schema using references local to this descriptor.
+function supportsToolLoading({ schema }) {
+  const refs = schema?.refs;
+  const servers = refs?.[schema?.uid]?.dict?.servers;
+  const entry = refs?.[servers]?.inner;
+  return own(refs?.[entry]?.dict, 'toolLoading');
+}
+
 export class McpManagementService {
   constructor(ctx, notes = null) { this.ctx = ctx; this.notes = notes; this.tail = Promise.resolve(); this.stopped = false; this.active = new Set(); }
   async dispose() {
@@ -22,12 +30,13 @@ export class McpManagementService {
     const values = d.value?.servers ?? {};
     const runtime = sanitizeDiagnostic(this.ctx.mcpManager.list(), values);
     const rows = Object.entries(values).map(([name, value]) => {
-      const masked = maskEntry(value);
+      const { oauth, ...connection } = value;
+      const masked = maskEntry(connection);
       const schemaSecrets = (d.secrets ?? []).filter(s => s.set && s.path[0] === 'servers' && s.path[1] === name);
-      return { name, note: own(noteState.notes, name) ? noteState.notes[name] : '', ...masked, locked: masked.hiddenPaths.length > 0 || schemaSecrets.length > 0, inherited: own(d.base?.servers, name), user: own(d.user?.servers, name), configured: true, status: runtime.find(r => r.name === name)?.status ?? { state: 'connecting' } };
+      return { name, note: own(noteState.notes, name) ? noteState.notes[name] : '', ...masked, ...(oauth != null ? { nativeOAuth: true } : {}), locked: masked.hiddenPaths.length > 0 || schemaSecrets.length > 0, inherited: own(d.base?.servers, name), user: own(d.user?.servers, name), configured: true, status: runtime.find(r => r.name === name)?.status ?? { state: 'connecting' } };
     });
-    for (const r of runtime) if (!rows.some(row => row.name === r.name)) rows.push({ ...r, note: own(noteState.notes, r.name) ? noteState.notes[r.name] : '', locked: true, managedByPlugin: true, retained: r.status.state === 'closed' || r.status.reason === 'cleanup' || r.status.reason === 'unclosed-generation' });
-    return { ns: d.ns, revision: d.revision, noteRevision: noteState.revision, platform: process.platform, notesUnavailable: !!noteState.unavailable, rows };
+    for (const r of runtime) if (!rows.some(row => row.name === r.name)) rows.push({ name: r.name, configured: r.configured, status: r.status, note: own(noteState.notes, r.name) ? noteState.notes[r.name] : '', locked: true, managedByPlugin: true, retained: r.status.state === 'closed' || r.status.reason === 'cleanup' || r.status.reason === 'unclosed-generation' });
+    return { ns: d.ns, supportsToolLoading: supportsToolLoading(d), revision: d.revision, noteRevision: noteState.revision, platform: process.platform, notesUnavailable: !!noteState.unavailable, rows };
   }
   execute(request, signal) {
     if (!isObject(request)) return Promise.reject(new InputError('Expected an operation object.'));
@@ -99,7 +108,11 @@ export class McpManagementService {
       }
       const current = d.value?.servers ?? {};
       const registered = this.ctx.mcpManager.list().filter(r => !r.configured).map(r => r.name);
-      for (const name of Object.keys(servers)) {
+      for (const [name, entry] of Object.entries(servers)) {
+        if (current[name]?.oauth != null) throw new InputError('Edit this OAuth connection in native DSH settings.', 'native-oauth');
+        if (own(entry, 'toolLoading') && !supportsToolLoading(d)) throw new InputError('The host MCP settings do not support toolLoading.', 'unsupported-tool-loading');
+        // Older clients omit this field when replacing an existing entry.
+        if (!own(entry, 'toolLoading') && own(current[name], 'toolLoading')) entry.toolLoading = current[name].toolLoading;
         if (registered.includes(name) && !own(current, name)) throw new InputError('A plugin or pending cleanup owns this server name.');
         if (own(current, name) && !request.overwrite && request.originalName !== name) throw new InputError('Server already exists. Edit the existing server instead.', 'exists');
         if (!own(request, 'entry') && JSON.stringify(servers[name]).includes('[redacted]')) throw new InputError('A redaction marker cannot be saved.');

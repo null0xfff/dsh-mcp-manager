@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { McpManagementService } from '../management.js';
 
-function fixture() {
+function fixture(schema) {
   let revision = 0;
   const base = { servers: { inherited: { transport: 'stdio', command: 'node', enabled: false } } };
   const user = { servers: { existing: { transport: 'streamable-http', url: 'https://example.invalid/mcp', headers: { Authorization: 'Bearer private' }, enabled: false } } };
@@ -10,7 +10,7 @@ function fixture() {
   const values = () => ({ servers: { ...base.servers, ...user.servers } });
   const ctx = {
     settings: {
-      describe: () => [{ ns: 'mcp-manager', value: values(), base, user, revision }],
+      describe: () => [{ ns: 'mcp-manager', schema, value: values(), base, user, revision }],
       mutate: async (ns, ops, expectedRevision) => {
         assert.equal(ns, 'mcp-manager'); assert.equal(expectedRevision, revision); calls.push(ops);
         for (const op of ops) {
@@ -60,4 +60,37 @@ test('toggle retains hidden secrets; inherited delete is refused; reset restores
 test('registered config is read only, probe calls native operation', async () => {
   const { service } = fixture(); await assert.rejects(service.execute({ action: 'toggle', name: 'registered', enabled: false, revision: 0 }));
   assert.equal((await service.execute({ action: 'probe', name: 'registered' })).ok, true);
+});
+
+test('native settings gate tool loading and older overwrite requests retain it', async () => {
+  const schema = { uid: 1, refs: { 1: { dict: { servers: 2 } }, 2: { inner: 3 }, 3: { dict: { toolLoading: 4 } } } };
+  const { service, values } = fixture(schema);
+  const entry = { transport: 'stdio', command: 'node', enabled: false };
+  const request = { action: 'save', name: 'test', revision: 0, entry: { ...entry, toolLoading: 'on-demand' } };
+  assert.equal(service.snapshot().supportsToolLoading, true);
+  await service.execute(request);
+  await service.execute({ ...request, entry, overwrite: true, revision: 1 });
+  assert.equal(values().servers.test.toolLoading, 'on-demand');
+  await assert.rejects(service.execute({ ...request, entry: { ...entry, toolLoading: 'invalid' } }), /eager or on-demand/);
+  const older = fixture();
+  await assert.rejects(older.service.execute(request), e => e.code === 'unsupported-tool-loading');
+  assert.deepEqual(older.calls, []);
+});
+
+test('OAuth connection settings survive edits, imports and toggles', async () => {
+  const { service, calls, values } = fixture();
+  const current = values().servers.existing;
+  current.oauth = { credentialKey: 'mcp-client/test' };
+  const row = service.snapshot().rows.find(r => r.name === 'existing');
+  assert.equal(row.nativeOAuth, true);
+  assert.equal(Object.hasOwn(row.config, 'oauth'), false);
+  const entry = { transport: 'streamable-http', url: current.url, enabled: false };
+  for (const action of ['preview', 'save']) {
+    for (const payload of [{ name: 'existing', originalName: 'existing', entry }, { text: JSON.stringify({ servers: { extra: entry, existing: entry } }), overwrite: true }]) {
+      await assert.rejects(service.execute({ action, revision: 0, ...payload }), e => e.code === 'native-oauth');
+    }
+  }
+  assert.deepEqual(calls, []);
+  await service.execute({ action: 'toggle', name: 'existing', enabled: true, revision: 0 });
+  assert.deepEqual(values().servers.existing.oauth, { credentialKey: 'mcp-client/test' });
 });

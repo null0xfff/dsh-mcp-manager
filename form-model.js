@@ -18,6 +18,7 @@ export function createDraft(row = null, snapshot = {}) {
   return {
     name: row?.name ?? '', originalName: row?.name, originalTransport: row ? transport : undefined,
     originalContext: row ? { command: entry.command ?? '', args: [...(entry.args ?? [])], cwd: entry.cwd ?? '', env: { ...(entry.env ?? {}) }, url: entry.url ?? '', host: Object.entries(entry.headers ?? {}).filter(([key]) => key.toLowerCase() === 'host').map(([, value]) => value), reconnect: { ...(entry.reconnect ?? {}) }, timeouts: Object.fromEntries(['startupTimeoutMs', 'toolCallTimeoutMs', 'closeTimeoutMs'].filter(key => own(entry, key)).map(key => [key, entry[key]])) } : undefined,
+    toolLoading: snapshot.supportsToolLoading ? entry.toolLoading ?? 'eager' : undefined,
     note: row?.note ?? '', enabled: row ? entry.enabled !== false : false, transport,
     revision: snapshot.revision, noteRevision: snapshot.noteRevision, envCaseInsensitive: snapshot.platform === 'win32', notesUnavailable: !!snapshot.notesUnavailable,
     http: { url: valueField(entry.url ?? '', 'url'), headers: pairs(entry.headers, 'headers') },
@@ -39,6 +40,7 @@ export function buildSubmission(draft, options = {}) {
   const errors = {};
   const error = (path, code) => { if (!errors[path]) errors[path] = code; };
   const entry = { transport: draft.transport, enabled: !!draft.enabled };
+  if (draft.toolLoading !== undefined) entry.toolLoading = draft.toolLoading;
   const canKeep = !!draft.originalName && draft.name === draft.originalName && draft.transport === draft.originalTransport;
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(draft.name) || unsafe.has(draft.name)) error('name', 'name');
   if (draft.originalName && draft.name !== draft.originalName) error('name', 'rename');
