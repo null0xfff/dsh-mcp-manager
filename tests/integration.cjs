@@ -32,10 +32,10 @@ async function checkClient(modules, manifest) {
   const runtimeVersion = getDshRuntimeVersion();
   assert.equal(evaluatePluginCompatibility(manifest), undefined, `Plugin compatibility check failed on DSH ${runtimeVersion}`);
   // These assertions check admission policy. Executable behavior is checked only on runtimeVersion.
-  for (const version of ['0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5', '0.2.2-rc.6', '0.2.2']) {
+  for (const version of ['0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5', '0.2.2-rc.6', '0.2.2', '0.2.3-alpha.2']) {
     assert.equal(evaluatePluginCompatibility(manifest, {}, version), undefined, version);
   }
-  for (const version of ['0.2.2-rc.2', '0.2.3-0', '0.2.3-alpha.1', '0.2.3', '0.3.0-alpha.1']) {
+  for (const version of ['0.2.2-rc.2', '0.2.3-0', '0.2.3-alpha.1', '0.2.3-alpha.2.1', '0.2.3-alpha.3', '0.2.3', '0.3.0-alpha.1']) {
     assert.equal(evaluatePluginCompatibility(manifest, {}, version)?.exempted, false, version);
   }
   const { HostConnectionService } = fromDsh('@deepseek-ai/dsh-client-connection');
@@ -43,6 +43,12 @@ async function checkClient(modules, manifest) {
   const root = fs.mkdtempSync(path.join(temp, 'dsh-mcp-manager-test-'));
   fs.mkdirSync(path.join(root, 'home'));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, dsh: { profile: { bundles: [] } } }));
+  const alpha2 = runtimeVersion === '0.2.3-alpha.2';
+  const servers = { base: { transport: 'stdio', command: 'node', enabled: false } };
+  if (alpha2) servers.oauth = {
+    transport: 'streamable-http', url: 'https://example.invalid/mcp', enabled: false,
+    oauth: { credentialKey: 'mcp-client/integration' },
+  };
   const rows = [
     { id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt' },
     { id: 'tools', name: '@deepseek-ai/dsh-tools' },
@@ -51,7 +57,7 @@ async function checkClient(modules, manifest) {
     { id: 'storage', name: '@deepseek-ai/dsh-storage' },
     { id: 'storage-json', name: '@deepseek-ai/dsh-storage-json', config: { root: path.join(root, 'data') } },
     { id: 'storage-domain', name: '@deepseek-ai/dsh-storage-domain', config: { backend: 'json' } },
-    { id: 'mcp-manager', name: '@deepseek-ai/dsh-mcp-manager', config: { servers: { base: { transport: 'stdio', command: 'node', enabled: false } } } },
+    { id: 'mcp-manager', name: '@deepseek-ai/dsh-mcp-manager', config: { servers } },
     { id: 'sandbox-policy', name: '@deepseek-ai/dsh-sandbox-policy', config: { mode: 'danger-full-access', workspaceRoot: root } },
     { id: 'client-modules', name: '@deepseek-ai/dsh-client-modules' },
   ];
@@ -62,7 +68,7 @@ async function checkClient(modules, manifest) {
   fs.writeFileSync(path.join(root, 'cordis.yml'), '[]\n');
   const patchPath = path.join(root, 'cordis.patch.yml');
   fs.writeFileSync(patchPath, '# Preserve this unrelated comment.\n' + stringify([{ insert: rows }]));
-  const pc = { name: 'isolated-test', dir: root, patchPath, installAnchor: anchor, cwd: root, home: path.join(root, 'home'), startedBundles: [], overlays: [], telemetryDisabledEnv: '1' };
+  const pc = { name: 'isolated-test', dir: root, patchPath, installAnchor: anchor, cwd: root, home: path.join(root, 'home'), startedBundles: [], overlays: [], overlayPaths: [], telemetryDisabledEnv: '1' };
   let ctx;
   try {
     const sessionModes = new WeakMap();
@@ -134,6 +140,22 @@ async function checkClient(modules, manifest) {
     const removed = await callThroughCarrier(owner, { action: 'remove', name: 'from-tool', revision: toggled.value.revision });
     assert.equal(removed.ok, true);
     assert.ok(!removed.value.rows.some(r => r.name === 'from-tool'));
+    assert.equal(removed.value.supportsToolLoading, alpha2);
+    const edit = { action: 'save', name: 'isolated', overwrite: true, revision: removed.value.revision };
+    const demand = await tool.execute({ ...edit, entry: { ...save.entry, toolLoading: 'on-demand' } }, exec);
+    if (alpha2) {
+      assert.equal(demand.ok, true);
+      const legacyEdit = await callThroughCarrier(owner, { ...edit, entry: save.entry, revision: demand.value.revision });
+      assert.equal(legacyEdit.ok, true);
+      assert.equal(legacyEdit.value.rows.find(r => r.name === 'isolated').config.toolLoading, 'on-demand');
+      const oauth = legacyEdit.value.rows.find(r => r.name === 'oauth');
+      assert.equal(oauth.nativeOAuth, true);
+      assert.equal(Object.hasOwn(oauth.config, 'oauth'), false);
+      const overwrite = await callThroughCarrier(owner, { ...edit, name: 'oauth', entry: save.entry, revision: legacyEdit.value.revision });
+      assert.equal(overwrite.error?.code, 'native-oauth');
+    } else {
+      assert.equal(demand.error?.code, 'unsupported-tool-loading');
+    }
     assert.equal(ctx.mcpManager.list().find(r => r.name === 'base').status.state, 'disabled');
     await checkClient(ctx.clientModules, manifest);
     await ctx.fiber.dispose();
@@ -141,6 +163,11 @@ async function checkClient(modules, manifest) {
     const reopened = await ctx.tools.get('mcp_servers_manage').execute({ action: 'list' }, { signal });
     assert.equal(reopened.value.noteRevision, 1);
     assert.equal(reopened.value.rows.find(r => r.name === 'isolated').note, '只读搜索服务器');
+    if (alpha2) {
+      const persisted = ctx.settings.describe().find(d => d.ns === 'mcp-manager').value.servers;
+      assert.equal(persisted.isolated.toolLoading, 'on-demand');
+      assert.equal(persisted.oauth.oauth.credentialKey, 'mcp-client/integration');
+    }
     console.log(`PASS on DSH ${runtimeVersion} (${process.version}): Host Loader, owner RPC, viewer denial, session permissions, native Settings, notes after reboot, and Client bundle registration.`);
   } finally {
     if (ctx) await ctx.fiber.dispose();

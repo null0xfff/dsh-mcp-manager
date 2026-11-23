@@ -19,6 +19,7 @@ function createDraft(row = null, snapshot = {}) {
   return {
     name: row?.name ?? '', originalName: row?.name, originalTransport: row ? transport : undefined,
     originalContext: row ? { command: entry.command ?? '', args: [...(entry.args ?? [])], cwd: entry.cwd ?? '', env: { ...(entry.env ?? {}) }, url: entry.url ?? '', host: Object.entries(entry.headers ?? {}).filter(([key]) => key.toLowerCase() === 'host').map(([, value]) => value), reconnect: { ...(entry.reconnect ?? {}) }, timeouts: Object.fromEntries(['startupTimeoutMs', 'toolCallTimeoutMs', 'closeTimeoutMs'].filter(key => own(entry, key)).map(key => [key, entry[key]])) } : undefined,
+    toolLoading: snapshot.supportsToolLoading ? entry.toolLoading ?? 'eager' : undefined,
     note: row?.note ?? '', enabled: row ? entry.enabled !== false : false, transport,
     revision: snapshot.revision, noteRevision: snapshot.noteRevision, envCaseInsensitive: snapshot.platform === 'win32', notesUnavailable: !!snapshot.notesUnavailable,
     http: { url: valueField(entry.url ?? '', 'url'), headers: pairs(entry.headers, 'headers') },
@@ -40,6 +41,7 @@ function buildSubmission(draft, options = {}) {
   const errors = {};
   const error = (path, code) => { if (!errors[path]) errors[path] = code; };
   const entry = { transport: draft.transport, enabled: !!draft.enabled };
+  if (draft.toolLoading !== undefined) entry.toolLoading = draft.toolLoading;
   const canKeep = !!draft.originalName && draft.name === draft.originalName && draft.transport === draft.originalTransport;
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(draft.name) || unsafe.has(draft.name)) error('name', 'name');
   if (draft.originalName && draft.name !== draft.originalName) error('name', 'rename');
@@ -169,6 +171,8 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useRef, useSyncExternalStore } = React;
     const NS = 'local.mcpManager', PANEL = 'local-mcp-servers';
     const en = {
+      onDemand: 'Load tools on demand', nativeOAuth: 'Edit this OAuth connection in native DSH settings.', 'waiting-authorization': 'Awaiting authorization',
+      'error.native-oauth': 'Edit this OAuth connection in native DSH settings.', 'error.unsupported-tool-loading': 'This host does not expose tool loading in MCP settings.',
       title: 'MCP servers', intro: 'Add a connection using fields, not configuration code. Changes apply to every session in this profile.',
       add: 'Add server', refresh: 'Refresh', close: 'Back to chat', empty: 'No MCP servers yet', emptyHelp: 'Add a remote HTTP endpoint or a local command to get started.', loading: 'Loading…', retry: 'Could not load servers. Try Refresh.',
       connected: 'Connected', disabled: 'Disabled', connecting: 'Connecting', reconnecting: 'Reconnecting', failed: 'Connection failed', closed: 'Closed', 'waiting-credentials': 'Waiting for credentials', tools: 'tools',
@@ -190,6 +194,8 @@ window.__ModuleLoader__.load({
       'error.invalid-input': 'Invalid configuration. Check the fields and the reason below.', 'error.conflict': 'Configuration changed elsewhere. Your draft is kept; refresh and reopen to review the latest values.', 'error.exists': 'This name already exists. Edit that row or explicitly allow replacement.', 'error.unavailable': 'Native MCP configuration is unavailable in this profile.', 'error.operation-failed': 'DSH refused the operation. Check configuration and connection status.', 'error.not-found': 'Server or operation not found.', 'error.forbidden': 'This action requires owner access.',
     };
     const zh = {
+      onDemand: '按需加载工具', nativeOAuth: '请在 DSH 原生设置中编辑此 OAuth 连接。', 'waiting-authorization': '等待授权',
+      'error.native-oauth': '请在 DSH 原生设置中编辑此 OAuth 连接。', 'error.unsupported-tool-loading': '当前宿主的 MCP 设置不支持工具加载方式。',
       title: 'MCP 服务器', intro: '逐项填写连接信息，无需输入配置代码。修改对当前 profile 的所有会话生效。',
       add: '添加服务器', refresh: '刷新', close: '返回聊天', empty: '还没有 MCP 服务器', emptyHelp: '添加远程 HTTP 地址或本地命令即可开始使用。', loading: '正在加载…', retry: '无法加载服务器，请刷新重试。',
       connected: '已连接', disabled: '已停用', connecting: '连接中', reconnecting: '重新连接中', failed: '连接失败', closed: '已关闭', 'waiting-credentials': '等待凭据', tools: '个工具',
@@ -383,6 +389,9 @@ window.__ModuleLoader__.load({
                 fieldControl('stdio.cwd', t('cwd'), draft.stdio.cwd, cwd => update(old => ({ ...old, stdio: { ...old.stdio, cwd } })), t('cwdPlaceholder'), ''), pairFields('env')),
               h('div', { className: 'lmcp-section' }, h('label', { className: 'lmcp-check' }, h('input', { type: 'checkbox', checked: draft.enabled, disabled: busy, onChange: e => update(old => ({ ...old, enabled: e.target.checked })) }), t('enabled')), h('p', { className: 'lmcp-muted' }, t('enabledHint'))),
               h('details', { open: advancedOpen, onToggle: e => setAdvancedOpen(e.currentTarget.open) }, h('summary', null, t('advanced'), ' · ', t('optional')), h('div', { className: 'lmcp-detail-body' }, h('p', { className: 'lmcp-muted', style: { marginBottom: 0 } }, t('advancedHint')),
+                draft.toolLoading !== undefined && h('label', { className: 'lmcp-check' },
+                  h('input', { type: 'checkbox', checked: draft.toolLoading === 'on-demand', disabled: busy,
+                    onChange: e => update(old => ({ ...old, toolLoading: e.target.checked ? 'on-demand' : 'eager' })) }), t('onDemand')),
                 h('div', { className: 'lmcp-grid' }, numericField('startupTimeout', 'seconds30'), numericField('toolCallTimeout', 'seconds60'), numericField('closeTimeout', 'seconds5')),
                 h('label', { className: 'lmcp-check' }, h('input', { ref: bindRef('advanced.reconnectEnabled'), type: 'checkbox', role: 'switch', 'aria-checked': draft.advanced.reconnectEnabled, checked: draft.advanced.reconnectEnabled, disabled: busy, onChange: e => update(old => ({ ...old, advanced: { ...old.advanced, reconnectEnabled: e.target.checked } })) }), t('reconnectEnabled')), h('p', { className: 'lmcp-muted', style: { marginBottom: 0 } }, t('reconnectHint')),
                 h('div', { className: 'lmcp-grid', 'aria-disabled': !draft.advanced.reconnectEnabled }, numericField('initialDelay', 'secondsHalf', !draft.advanced.reconnectEnabled), numericField('maxDelay', 'seconds30', !draft.advanced.reconnectEnabled), numericField('maxAttempts', 'attempts10', !draft.advanced.reconnectEnabled, true)))),
@@ -394,13 +403,14 @@ window.__ModuleLoader__.load({
             !data ? h('p', { className: 'lmcp-muted', role: 'status' }, notice?.error ? t('retry') : t('loading')) : data.rows.length === 0 ? h('div', { className: 'lmcp-empty' }, h(ServerIcon, { size: 32 }), h('h2', null, t('empty')), h('p', { className: 'lmcp-muted' }, t('emptyHelp')), button(t('add'), () => start(), { className: 'lmcp-primary' })) :
               h('div', { className: 'lmcp-list' }, data.rows.map(row => h('article', { className: 'lmcp-card', key: row.name },
                 h('div', { className: 'lmcp-row-head' }, h('div', { className: 'lmcp-actions' }, h(ServerIcon, { size: 19 }), h('strong', { className: 'lmcp-name' }, row.name), h('span', { className: 'lmcp-muted' }, row.config?.transport)), h('span', { className: 'lmcp-badge' }, h('span', { className: 'lmcp-dot', 'data-state': row.status.state }), t(row.status.state), row.status.state === 'connected' && ` · ${row.status.toolCount} ${t('tools')}`)),
+                row.nativeOAuth && h('p', { className: 'lmcp-muted' }, t('nativeOAuth')),
                 row.note && h('p', { className: 'lmcp-note' }, row.note),
                 h('p', { className: 'lmcp-muted lmcp-endpoint' }, row.retained ? t('retained') : row.managedByPlugin ? t('plugin') : `${t('source')} · ${t(row.inherited ? 'inherited' : 'user')}`),
                 row.config && h('p', { className: 'lmcp-muted lmcp-endpoint' }, (row.config.transport === 'stdio' ? row.config.command : row.config.url) === '[redacted]' ? t('keep') : row.config.transport === 'stdio' ? row.config.command : row.config.url),
                 row.status.lastError && h('div', { className: 'lmcp-error', role: 'status' }, row.status.lastError),
                 (row.status.result?.closeConfirmed === false || row.retained) && h('div', { className: 'lmcp-error', role: 'status' }, t('cleanup')),
                 row.status.result?.cleanupError && h('div', { className: 'lmcp-error', role: 'status' }, row.status.result.cleanupError),
-                h('div', { className: 'lmcp-actions' }, !row.managedByPlugin && button(t('edit'), () => start(row)), !row.managedByPlugin && mutationButton(t(row.config.enabled === false ? 'enable' : 'disable'), () => mutate('toggle', row, { enabled: row.config.enabled === false }), { role: 'switch', 'aria-checked': row.config.enabled !== false, 'aria-label': `${row.name} · ${t(row.config.enabled === false ? 'enable' : 'disable')}` }),
+                h('div', { className: 'lmcp-actions' }, !row.managedByPlugin && !row.nativeOAuth && button(t('edit'), () => start(row)), !row.managedByPlugin && mutationButton(t(row.config.enabled === false ? 'enable' : 'disable'), () => mutate('toggle', row, { enabled: row.config.enabled === false }), { role: 'switch', 'aria-checked': row.config.enabled !== false, 'aria-label': `${row.name} · ${t(row.config.enabled === false ? 'enable' : 'disable')}` }),
                   button(t('probe'), () => run({ action: 'probe', name: row.name }, value => setResult({ name: row.name, value }))), mutationButton(t('restart'), () => run({ action: 'restart', name: row.name }, acceptSnapshot)),
                   !row.managedByPlugin && (!row.inherited || row.user) && mutationButton(t(row.inherited ? 'reset' : 'remove'), () => setConfirm({ name: row.name, action: row.inherited ? 'reset' : 'remove' }), { className: row.inherited ? '' : 'lmcp-danger' })),
                 confirm?.name === row.name && h('div', { className: 'lmcp-confirm' }, h('span', null, t(confirm.action === 'reset' ? 'resetConfirm' : 'deleteConfirm')), mutationButton(t('yes'), () => mutate(confirm.action, row), { className: 'lmcp-danger' }), button(t('no'), () => setConfirm(null)))))),

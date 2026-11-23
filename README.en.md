@@ -42,6 +42,10 @@ When configuring a **stdio** server, enter the executable and its arguments sepa
 - **Plaintext warning**: Any plaintext secret entered directly into the form may be stored in the profile configuration, even when masked in the preview.
 - **Supported transports**: **Streamable HTTP** and **stdio** only. Legacy SSE and interactive OAuth are not supported.
 
+On hosts that expose the native setting, select **Load tools on demand** under advanced settings to let agents load the tools when needed. Clear it for eager loading.
+
+Edit existing OAuth connections and manage authorization in native DSH settings. The panel displays status and can toggle the connection. Form saves, imports and agent writes refuse to overwrite an OAuth connection.
+
 ## Permissions
 
 The plugin enforces separate permission boundaries for the UI and the Agent tool:
@@ -53,11 +57,11 @@ The plugin enforces separate permission boundaries for the UI and the Agent tool
 
 ## Compatibility and verification
 
-- **Version**: `1.1.3`
+- **Version**: `1.1.4`
 - **Node.js**: `>=24.9.0`
-- **DSH compatibility**: `>=0.2.2-rc.3 <0.2.3-0`
+- **DSH compatibility**: `>=0.2.2-rc.3 <0.2.3-0 || 0.2.3-alpha.2`
   - **Verified**: Host loading, `owner`/`viewer` access control, configuration writes, note persistence, and client registration were verified on `0.2.2-rc.3`, `0.2.2-rc.4`, and `0.2.2-rc.5`.
-  - **Policy**: Subsequent releases on the `0.2.2` line are admitted by the compatibility range.
+  - **Policy**: The existing `0.2.2` range remains open. The `0.2.3` line admits exactly `0.2.3-alpha.2`, verified on Windows Desktop.
 - **Runtime dependencies**: `yaml` `2.8.1`, `zod` `4.6.6`.
 
 For development verification, run from the repository root:

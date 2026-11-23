@@ -161,3 +161,12 @@ test('first error uses actionable form field path and override metadata stays ex
   const draft = createDraft(); const result = buildSubmission(draft); assert.equal(result.firstError, 'name');
   const good = buildSubmission(http(), { overwrite: true, revision: 'r2', noteRevision: 10 }); assert.equal(good.request.overwrite, true); assert.equal(good.request.revision, 'r2'); assert.equal(good.request.noteRevision, 10);
 });
+
+test('tool loading round-trips only when the host exposes the field', () => {
+  const row = { name: 'qa', config: { transport: 'stdio', command: 'node', toolLoading: 'on-demand' } };
+  const draft = createDraft(row, { supportsToolLoading: true });
+  assert.equal(request(draft).entry.toolLoading, 'on-demand');
+  draft.toolLoading = 'eager';
+  assert.equal(request(draft).entry.toolLoading, 'eager');
+  assert.equal(Object.hasOwn(request(createDraft(row)).entry, 'toolLoading'), false);
+});

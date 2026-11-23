@@ -4,7 +4,7 @@ export class InputError extends Error {
   constructor(message, code = 'invalid-input') { super(message); this.code = code; }
 }
 const forbidden = new Set(['__proto__', 'prototype', 'constructor', '__jsExpr']);
-const fields = new Set(['transport', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'enabled', 'startupTimeoutMs', 'toolCallTimeoutMs', 'closeTimeoutMs', 'reconnect']);
+const fields = new Set(['transport', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'enabled', 'startupTimeoutMs', 'toolCallTimeoutMs', 'closeTimeoutMs', 'reconnect', 'toolLoading']);
 export const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj ?? {}, key);
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function assertPlain(value, depth = 0) {
@@ -65,6 +65,7 @@ export function normalizeEntry(raw) {
     if (envNames.has(identity)) throw new InputError('Environment variable names must be unique (case-insensitive on Windows).');
     envNames.add(identity);
   }
+  if (own(entry, 'toolLoading') && !['eager', 'on-demand'].includes(entry.toolLoading)) throw new InputError('toolLoading must be eager or on-demand.');
   if (own(entry, 'enabled') && typeof entry.enabled !== 'boolean') throw new InputError('enabled must be a boolean.');
   for (const key of ['startupTimeoutMs', 'closeTimeoutMs', 'toolCallTimeoutMs']) {
     if (own(entry, key) && (!Number.isFinite(entry[key]) || entry[key] <= 0 || entry[key] > 2147483647)) throw new InputError(`${key} must be between 1 and 2147483647.`);
